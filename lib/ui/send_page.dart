@@ -271,8 +271,8 @@ class _SendPageState extends State<SendPage> with WidgetsBindingObserver {
         LinearProgressIndicator(value: s.totalFiles == 0 ? null : s.doneFiles / s.totalFiles),
         const SizedBox(height: 8),
         Text('파일 ${s.doneFiles} / ${s.totalFiles}'),
-        Text(s.totalBytes > 0
-            ? '${formatBytes(s.sentBytes)} / ${formatBytes(s.totalBytes)}+'
+        Text(s.totalBytes >= s.sentBytes
+            ? '${formatBytes(s.sentBytes)} / ${formatBytes(s.totalBytes)}'
             : formatBytes(s.sentBytes)),
         if (sending && s.currentFile != null)
           Text(s.currentFile!, maxLines: 1, overflow: TextOverflow.ellipsis),

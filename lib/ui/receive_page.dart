@@ -115,7 +115,8 @@ class _ReceivePageState extends State<ReceivePage> with WidgetsBindingObserver {
           ),
           const SizedBox(height: 8),
           Text('파일 ${s.doneFiles} / ${req.totalFiles}'),
-          Text(req.totalBytes > 0
+          // 사진은 크기를 모르고 등록돼 합계에서 빠지므로, 넘어서면 받은 양만 보여준다
+          Text(req.totalBytes >= s.receivedBytes
               ? '${formatBytes(s.receivedBytes)} / ${formatBytes(req.totalBytes)}'
               : formatBytes(s.receivedBytes)),
           if (s.currentFile != null && !s.finished)
