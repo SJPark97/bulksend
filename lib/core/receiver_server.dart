@@ -131,14 +131,14 @@ class ReceiverServer {
       session.files[f.id] = f;
       FileStatus status;
       if (done.contains(f.id)) {
-        status = FileStatus(id: f.id, state: FileState.done, offset: f.size);
+        status = FileStatus(id: f.id, state: FileState.done, offset: max(f.size, 0));
         stats
           ..doneFiles += 1
-          ..receivedBytes += f.size;
+          ..receivedBytes += max(f.size, 0);
       } else {
         final part = _partFile(session.senderId, f.id);
         var len = await part.exists() ? await part.length() : 0;
-        if (len > f.size) {
+        if (f.size != kUnknownSize && len > f.size) {
           await part.delete();
           len = 0;
         }
@@ -153,14 +153,27 @@ class ReceiverServer {
   }
 
   Future<void> _upload(HttpRequest req, _Session session, String id) async {
-    final meta = session.files[id];
+    var meta = session.files[id];
     if (meta == null) return _reply(req, 404, {'error': 'unregistered file'});
+
+    // 크기를 모르고 등록된 파일은 업로드 때 X-Size 로 확정한다
+    final declared = int.tryParse(req.headers.value('X-Size') ?? '');
+    if (meta.size == kUnknownSize) {
+      if (declared == null || declared < 0) return _reply(req, 400, {'error': 'X-Size required'});
+      meta = session.files[id] = meta.withSize(declared);
+    } else if (declared != null && declared != meta.size) {
+      return _reply(req, 400, {'error': 'size mismatch'});
+    }
 
     final done = _doneBySender[session.senderId]!;
     if (done.contains(id)) return _reply(req, 200, {'done': true, 'offset': meta.size});
 
     final part = _partFile(session.senderId, id);
-    final current = await part.exists() ? await part.length() : 0;
+    var current = await part.exists() ? await part.length() : 0;
+    if (current > meta.size) {
+      await part.delete();
+      current = 0;
+    }
     final offset = int.tryParse(req.headers.value('X-Offset') ?? '');
     if (_busy.contains(id) || offset != current) {
       return _reply(req, 409, {'offset': current});

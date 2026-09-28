@@ -182,4 +182,28 @@ void main() {
     expect(code, 200);
     expect(server.stats.finished, true);
   });
+
+  test('크기 모름(-1)으로 등록하면 X-Size 필수, 이후 크기 불일치는 400', () async {
+    final unknown = TransferFile(
+        id: 'u1', relPath: 'p.heic', size: kUnknownSize, mtime: 1, kind: FileKind.photo);
+    final sid = await startSession();
+    expect((await register(sid, [unknown])).single.state, FileState.fresh);
+
+    var (code, _) = await send('PUT', '/api/session/$sid/upload/u1',
+        bytes: data.sublist(0, 4), headers: {'X-Offset': '0'});
+    expect(code, 400);
+
+    (code, _) = await send('PUT', '/api/session/$sid/upload/u1',
+        bytes: data.sublist(0, 4), headers: {'X-Offset': '0', 'X-Size': '10'});
+    expect(code, 200);
+
+    (code, _) = await send('PUT', '/api/session/$sid/upload/u1',
+        bytes: data.sublist(4), headers: {'X-Offset': '4', 'X-Size': '11'});
+    expect(code, 400);
+
+    final (code2, body) = await send('PUT', '/api/session/$sid/upload/u1',
+        bytes: data.sublist(4), headers: {'X-Offset': '4', 'X-Size': '10'});
+    expect(code2, 200);
+    expect(body['done'], true);
+  });
 }

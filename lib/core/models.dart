@@ -8,6 +8,9 @@ const int kServerPort = 53420;
 /// 파일 목록 등록 시 한 번에 보내는 개수
 const int kFileBatchSize = 1000;
 
+/// 등록 시점에 크기를 모를 때
+const int kUnknownSize = -1;
+
 /// 저장 위치를 가르는 기준. photo/video 는 갤러리, file 은 파일 폴더로 간다.
 enum FileKind { photo, video, file }
 
@@ -50,11 +53,17 @@ class TransferFile {
 
   /// '/' 구분 상대경로. 폴더 구조 유지용.
   final String relPath;
+
+  /// 바이트 크기. 등록 시점에 모르면 [kUnknownSize] 이고, 업로드 때 `X-Size` 로 알려준다.
+  /// (iOS 사진은 원본을 꺼내 봐야 정확한 크기를 알 수 있어서)
   final int size;
 
   /// 수정시각 (epoch ms)
   final int mtime;
   final FileKind kind;
+
+  TransferFile withSize(int size) =>
+      TransferFile(id: id, relPath: relPath, size: size, mtime: mtime, kind: kind);
 
   Map<String, dynamic> toJson() => {
         'id': id,

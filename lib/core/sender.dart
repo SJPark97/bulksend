@@ -8,10 +8,23 @@ import 'models.dart';
 /// 보낼 항목 하나. 실제 바이트는 전송 직전에 [open] 으로 가져온다.
 /// (iOS 사진처럼 원본 준비에 시간이 걸리는 소스를 위해 지연 로딩)
 abstract interface class SendItem {
+  /// 크기를 모르면 size 가 [kUnknownSize] 일 수 있다. [open] 결과로 확정된다.
   TransferFile get meta;
 
-  /// [offset] 바이트부터의 스트림. 읽을 수 없으면 예외를 던진다 → 실패 목록으로.
-  Future<Stream<List<int>>> open(int offset);
+  /// [offset] 바이트부터 읽는다. 읽을 수 없으면 예외를 던진다 → 실패 목록으로.
+  Future<OpenedItem> open(int offset);
+
+  /// 이 파일 전송이 끝났을 때(성공/실패) 호출. 임시로 꺼낸 파일 정리용.
+  Future<void> release();
+}
+
+class OpenedItem {
+  const OpenedItem(this.stream, this.size);
+
+  final Stream<List<int>> stream;
+
+  /// 전체 크기 (offset 과 무관)
+  final int size;
 }
 
 enum SendState { idle, sending, paused, done, error }
@@ -88,7 +101,7 @@ class Sender {
       ..state = SendState.sending
       ..error = null
       ..totalFiles = items.length
-      ..totalBytes = items.fold(0, (s, e) => s + e.meta.size)
+      ..totalBytes = items.fold(0, (s, e) => s + max(e.meta.size, 0))
       ..doneFiles = 0
       ..sentBytes = 0
       ..currentFile = null
@@ -108,7 +121,7 @@ class Sender {
           if (s.state == FileState.done) {
             stats
               ..doneFiles += 1
-              ..sentBytes += item.meta.size;
+              ..sentBytes += max(item.meta.size, 0);
           } else {
             stats.sentBytes += s.offset;
             queue.add((item, s.offset));
@@ -175,7 +188,11 @@ class Sender {
     Future<void> worker() async {
       while (!_stopped && next < queue.length) {
         final (item, offset) = queue[next++];
-        await _uploadOne(client, sid, item, offset);
+        try {
+          await _uploadOne(client, sid, item, offset);
+        } finally {
+          await item.release();
+        }
       }
     }
 
@@ -204,9 +221,12 @@ class Sender {
       }
       attempts++;
 
-      Stream<List<int>> data;
+      OpenedItem opened;
       try {
-        data = await item.open(pos);
+        opened = await item.open(pos);
+        if (meta.size != kUnknownSize && opened.size != meta.size) {
+          throw StateError('size changed');
+        }
       } catch (_) {
         stats
           ..failed.add(meta)
@@ -214,13 +234,16 @@ class Sender {
         _emit();
         return;
       }
+      final size = opened.size;
 
       stats.currentFile = meta.relPath;
       try {
         final req = await client.put(host, port, '/api/session/$sid/upload/${meta.id}');
-        req.headers.set('X-Offset', '$pos');
-        req.contentLength = meta.size - pos;
-        await req.addStream(data.map((chunk) {
+        req.headers
+          ..set('X-Offset', '$pos')
+          ..set('X-Size', '$size');
+        req.contentLength = size - pos;
+        await req.addStream(opened.stream.map((chunk) {
           pos += chunk.length;
           stats.sentBytes += chunk.length;
           return chunk;
@@ -230,7 +253,7 @@ class Sender {
 
         switch (res.statusCode) {
           case 200 when body['done'] == true:
-            syncTo(meta.size);
+            syncTo(size);
             stats.doneFiles += 1;
             _emit();
             return;

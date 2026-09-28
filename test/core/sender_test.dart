@@ -10,9 +10,13 @@ import 'package:path/path.dart' as p;
 
 /// 메모리 데이터를 보내는 테스트용 항목. [failAfter] 바이트 뒤에 [failTimes] 번 끊긴다.
 class MemItem implements SendItem {
-  MemItem(String relPath, this.data, {this.failAfter, this.failTimes = 0})
-      : meta = TransferFile.create(
-            relPath: relPath, size: data.length, mtime: 1700000000000, kind: FileKind.file);
+  MemItem(String relPath, this.data, {this.failAfter, this.failTimes = 0, bool unknownSize = false})
+      : meta = TransferFile(
+            id: fileIdOf(relPath, 0, 1700000000000),
+            relPath: relPath,
+            size: unknownSize ? kUnknownSize : data.length,
+            mtime: 1700000000000,
+            kind: FileKind.file);
 
   @override
   final TransferFile meta;
@@ -20,20 +24,24 @@ class MemItem implements SendItem {
   final int? failAfter;
   int failTimes;
   int opens = 0;
+  int releases = 0;
 
   @override
-  Future<Stream<List<int>>> open(int offset) async {
+  Future<OpenedItem> open(int offset) async {
     opens++;
     final rest = data.sublist(offset);
-    if (failAfter == null || failTimes <= 0) return Stream.value(rest);
+    if (failAfter == null || failTimes <= 0) return OpenedItem(Stream.value(rest), data.length);
     failTimes--;
     final cut = (failAfter! - offset).clamp(0, rest.length);
-    return (() async* {
+    return OpenedItem((() async* {
       yield rest.sublist(0, cut);
       await Future<void>.delayed(const Duration(milliseconds: 20));
       throw const SocketException('simulated drop');
-    })();
+    })(), data.length);
   }
+
+  @override
+  Future<void> release() async => releases++;
 }
 
 class BrokenItem implements SendItem {
@@ -41,7 +49,10 @@ class BrokenItem implements SendItem {
   final meta = TransferFile.create(relPath: 'broken.bin', size: 5, mtime: 1, kind: FileKind.file);
 
   @override
-  Future<Stream<List<int>>> open(int offset) async => throw const FileSystemException('gone');
+  Future<OpenedItem> open(int offset) async => throw const FileSystemException('gone');
+
+  @override
+  Future<void> release() async {}
 }
 
 List<int> bytes(int n, int seed) => List<int>.generate(n, (i) => (i * 7 + seed) % 256);
@@ -89,6 +100,22 @@ void main() {
     for (final it in items) {
       expect(await saved(it.meta.relPath), it.data);
     }
+  });
+
+  test('크기를 모르고 등록해도 업로드 때 확정되어 저장, 끊겨도 이어받기', () async {
+    final data = bytes(150000, 9);
+    final item = MemItem('photo.heic', data, unknownSize: true, failAfter: 70000, failTimes: 1);
+    final sender = makeSender([item]);
+    await sender.run();
+
+    expect(sender.stats.state, SendState.done);
+    expect(await saved('photo.heic'), data);
+    expect(item.releases, 1);
+
+    // 다시 보내면 열지 않고 건너뜀
+    final again = MemItem('photo.heic', data, unknownSize: true);
+    await makeSender([again]).run();
+    expect(again.opens, 0);
   });
 
   test('PIN이 틀리면 wrongPin 에러', () async {
