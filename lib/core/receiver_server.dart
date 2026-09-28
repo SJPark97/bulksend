@@ -53,6 +53,21 @@ class ReceiverServer {
   final Set<String> _busy = {};
   final _random = Random.secure();
 
+  /// 완료 처리(최종 위치로 이동 + 완료 기록)는 한 번에 하나씩 한다. 업로드 자체는 병렬.
+  /// 동시에 하면 같은 이름 파일이 빈 이름을 같이 골라 서로 덮어쓰고,
+  /// done.log 도 서로 덮어써 기록이 빠진다 (Dart 의 append 는 끝으로 이동 후 쓰기라 원자적이지 않음).
+  Future<void> _finalizing = Future.value();
+
+  Future<void> _finalize(String senderId, File part, TransferFile meta) {
+    final task = _finalizing.then((_) async {
+      await storage.commit(part, meta);
+      _doneBySender[senderId]!.add(meta.id);
+      await _doneLog(senderId).writeAsString('${meta.id}\n', mode: FileMode.append, flush: true);
+    });
+    _finalizing = task.catchError((_) {});
+    return task;
+  }
+
   int get port => _server!.port;
 
   Future<void> start({int port = kServerPort}) async {
@@ -221,9 +236,7 @@ class ReceiverServer {
     if (overflow) return _reply(req, 400, {'error': 'more bytes than size'});
 
     if (written == meta.size) {
-      await storage.commit(part, meta);
-      done.add(id);
-      await _doneLog(session.senderId).writeAsString('$id\n', mode: FileMode.append, flush: true);
+      await _finalize(session.senderId, part, meta);
       stats.doneFiles += 1;
       _changes.add(null);
       return _reply(req, 200, {'done': true, 'offset': written});

@@ -213,4 +213,27 @@ void main() {
     final (code, _) = await send('POST', '/api/session/$sid/files', json: []);
     expect(code, 200);
   });
+
+  test('같은 이름 파일을 동시에 받아도 덮어쓰지 않고, 완료 기록도 빠짐없이 남김', () async {
+    final files = [
+      for (var i = 0; i < 30; i++)
+        TransferFile(id: 'dup$i', relPath: 'same.bin', size: 10, mtime: 1, kind: FileKind.file),
+    ];
+    final sid = await startSession();
+    await register(sid, files);
+    await Future.wait([
+      for (final f in files)
+        send('PUT', '/api/session/$sid/upload/${f.id}', bytes: data, headers: {'X-Offset': '0'}),
+    ]);
+    expect(out.listSync().whereType<File>().length, 30);
+
+    // 서버를 새로 띄워도(앱 재시작) 완료 기록이 모두 남아 있어야 한다
+    await server.stop();
+    server = ReceiverServer(
+        pin: '847', workDir: Directory(p.join(tmp.path, 'work')), storage: FolderStorage(out));
+    await server.start(port: 0);
+    final sid2 = await startSession();
+    final states = (await register(sid2, files)).map((s) => s.state).toSet();
+    expect(states, {FileState.done});
+  });
 }
