@@ -206,4 +206,11 @@ void main() {
     expect(code2, 200);
     expect(body['done'], true);
   });
+
+  test('ensureListening: 살아 있으면 그대로, 세션 유지', () async {
+    final sid = await startSession();
+    await server.ensureListening();
+    final (code, _) = await send('POST', '/api/session/$sid/files', json: []);
+    expect(code, 200);
+  });
 }

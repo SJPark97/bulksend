@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:photo_manager/photo_manager.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../core/connect_code.dart';
 import '../core/sender.dart';
@@ -17,7 +18,7 @@ class SendPage extends StatefulWidget {
   State<SendPage> createState() => _SendPageState();
 }
 
-class _SendPageState extends State<SendPage> {
+class _SendPageState extends State<SendPage> with WidgetsBindingObserver {
   final _codeCtrl = TextEditingController();
   final List<SendItem> _items = [];
   String? _loading;
@@ -25,8 +26,32 @@ class _SendPageState extends State<SendPage> {
   Sender? _sender;
   Timer? _ticker;
 
+  /// 사용자가 직접 누른 일시정지. 이때는 앱 복귀해도 자동 재개하지 않는다.
+  bool _userPaused = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final sender = _sender;
+    if (state != AppLifecycleState.resumed || sender == null) return;
+    WakelockPlus.enable();
+    // iOS 는 백그라운드로 가면 연결이 끊긴다. 돌아오면 자동으로 이어서 보낸다.
+    if (sender.stats.state == SendState.paused &&
+        sender.stats.error == SendError.connection &&
+        !_userPaused) {
+      _run();
+    }
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    WakelockPlus.disable();
     _ticker?.cancel();
     _sender?.pause();
     _codeCtrl.dispose();
@@ -101,6 +126,8 @@ class _SendPageState extends State<SendPage> {
       _sender = sender;
       _message = null;
     });
+    // 전송 화면에 있는 동안 화면을 켜 둔다
+    await WakelockPlus.enable();
     _ticker ??= Timer.periodic(const Duration(milliseconds: 300), (_) {
       if (mounted) setState(() {});
     });
@@ -109,6 +136,7 @@ class _SendPageState extends State<SendPage> {
 
   Future<void> _run() async {
     final sender = _sender!;
+    _userPaused = false;
     await sender.run();
     if (!mounted) return;
     if (sender.stats.error == SendError.wrongPin) {
@@ -250,7 +278,13 @@ class _SendPageState extends State<SendPage> {
           Text(s.currentFile!, maxLines: 1, overflow: TextOverflow.ellipsis),
         const SizedBox(height: 24),
         if (sending)
-          OutlinedButton(onPressed: _sender!.pause, child: const Text('일시정지'))
+          OutlinedButton(
+            onPressed: () {
+              _userPaused = true;
+              _sender!.pause();
+            },
+            child: const Text('일시정지'),
+          )
         else if (s.state == SendState.paused)
           FilledButton(onPressed: _run, child: const Text('재개')),
         if (s.failed.isNotEmpty) ...[

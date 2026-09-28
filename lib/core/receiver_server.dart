@@ -61,6 +61,21 @@ class ReceiverServer {
     _server!.listen(_handle);
   }
 
+  /// iOS 는 백그라운드에서 돌아오면 리스닝 소켓이 죽어 있을 수 있다.
+  /// 살아 있는지 확인하고, 죽었으면 같은 포트로 다시 연다. 이어받기 기록과 세션은 그대로 유지.
+  Future<void> ensureListening() async {
+    final port = _server?.port;
+    if (port == null) return;
+    try {
+      final probe = await Socket.connect(InternetAddress.loopbackIPv4, port,
+          timeout: const Duration(seconds: 1));
+      probe.destroy();
+    } on SocketException {
+      await _server?.close(force: true);
+      await start(port: port);
+    }
+  }
+
   Future<void> stop() async {
     await _server?.close(force: true);
     _server = null;

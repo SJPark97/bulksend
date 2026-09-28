@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../core/connect_code.dart';
 import '../core/receiver_server.dart';
@@ -15,7 +16,7 @@ class ReceivePage extends StatefulWidget {
   State<ReceivePage> createState() => _ReceivePageState();
 }
 
-class _ReceivePageState extends State<ReceivePage> {
+class _ReceivePageState extends State<ReceivePage> with WidgetsBindingObserver {
   ReceiverServer? _server;
   String? _code;
   String? _folderPath;
@@ -25,7 +26,18 @@ class _ReceivePageState extends State<ReceivePage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // 받기 화면에 있는 동안은 대기 중에도 화면을 켜 둔다
+    WakelockPlus.enable();
     _start();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      WakelockPlus.enable();
+      _server?.ensureListening();
+    }
   }
 
   Future<void> _start() async {
@@ -56,6 +68,8 @@ class _ReceivePageState extends State<ReceivePage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    WakelockPlus.disable();
     _ticker?.cancel();
     _server?.stop();
     super.dispose();
