@@ -50,7 +50,10 @@ class FolderStorage implements ReceiveStorage {
   final Directory root;
 
   @override
-  Future<void> commit(File part, TransferFile meta) async {
+  Future<void> commit(File part, TransferFile meta) => save(part, meta);
+
+  /// [commit] 과 같고, 저장된 파일을 돌려준다.
+  Future<File> save(File part, TransferFile meta) async {
     final target = await uniqueFile(p.join(root.path, safeRelPath(meta.relPath)));
     await target.parent.create(recursive: true);
     final saved = await moveFile(part, target.path);
@@ -59,5 +62,6 @@ class FolderStorage implements ReceiveStorage {
     } on FileSystemException {
       // 수정시각 복원은 가능한 경우에만
     }
+    return saved;
   }
 }
