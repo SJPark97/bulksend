@@ -111,6 +111,13 @@ Stream<List<int>> skipBytes(Stream<List<int>> source, int count) async* {
 
 /// 여러 파일 선택. 폴더 구조 없이 파일명만 유지한다.
 Future<List<SendItem>> pickFiles() async {
+  if (Platform.isIOS) {
+    // file_picker 는 iOS 에서 고른 파일을 임시폴더로 복사해 대량이면 저장공간이 부족해진다
+    // → 복사 없이 여는 네이티브 선택기 사용
+    final paths = await _pickerChannel.invokeListMethod<String>('pickFiles') ?? const [];
+    return [for (final path in paths) await FileSendItem.of(File(path), p.basename(path))];
+  }
+
   final picked = await FilePicker.pickFiles();
   final items = <SendItem>[];
   for (final f in picked) {
@@ -126,13 +133,13 @@ Future<List<SendItem>> pickFiles() async {
   return items;
 }
 
-const _folderChannel = MethodChannel('bulksend/folder');
+const _pickerChannel = MethodChannel('bulksend/picker');
 
 /// 폴더 선택. 선택한 폴더 이름부터 시작하는 상대경로를 유지한다.
 Future<List<SendItem>> pickFolder() async {
   final String? root;
   if (Platform.isIOS) {
-    root = await _folderChannel.invokeMethod<String>('pickFolder');
+    root = await _pickerChannel.invokeMethod<String>('pickFolder');
   } else {
     // 다른 앱 폴더까지 dart:io 로 읽으려면 전체 파일 접근 권한이 필요하다
     if (!await Permission.manageExternalStorage.request().isGranted) {
