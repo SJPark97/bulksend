@@ -190,7 +190,12 @@ Future<List<SendItem>> loadAlbum(AssetPathEntity album,
       if (kind == null) continue;
 
       final title = a.title ?? await a.titleAsync;
-      final mtime = a.createDateTime.millisecondsSinceEpoch;
+      // 안드로이드는 촬영일(DATE_TAKEN)이 없으면 createDateTime 이 "기기에 추가된 시각"이다.
+      // 복원·복사된 사진은 파일 수정시각이 원래 날짜에 더 가까우므로 더 이른 쪽을 쓴다.
+      final created = a.createDateTime;
+      final modified = a.modifiedDateTime;
+      final mtime = (Platform.isAndroid && modified.isBefore(created) ? modified : created)
+          .millisecondsSinceEpoch;
       items.add(PhotoSendItem(a, _photoMeta(a, 'still', title, mtime, kind)));
 
       if (a.isLivePhoto) {
