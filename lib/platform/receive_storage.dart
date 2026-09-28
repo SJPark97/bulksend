@@ -76,9 +76,10 @@ class ReceiveSetup {
 /// 받기 전에 권한을 요청하고 플랫폼별 저장소를 만든다.
 /// 권한이 없으면 [StateError] 를 던진다.
 Future<ReceiveSetup> prepareReceive() async {
-  final ps = await PhotoManager.requestPermissionExtend(
-    requestOption: const PermissionRequestOption(iosAccessLevel: IosAccessLevel.addOnly),
-  );
+  // iOS 는 "추가만 허용"이면 저장 직후 새 에셋을 다시 읽지 못해 photo_manager 가 실패를 돌려준다.
+  // (저장은 이미 된 상태라 대체 폴더에 한 번 더 저장되는 중복이 생김) → 읽기/쓰기 권한으로 요청.
+  // 사용자가 "제한된 접근"을 골라도 앱이 만든 에셋은 읽을 수 있어 괜찮다.
+  final ps = await PhotoManager.requestPermissionExtend();
   if (!ps.hasAccess) throw StateError('사진 저장 권한이 필요해요');
 
   final Directory folder;
