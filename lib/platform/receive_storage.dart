@@ -104,6 +104,7 @@ Future<ReceiveSetup> prepareReceive() async {
       folder: folderStorage,
     ),
     workDir: workDir,
-    folderPath: folder.path,
+    // iOS 는 샌드박스 경로 대신 사용자가 찾아갈 위치로 안내
+    folderPath: Platform.isIOS ? '파일 앱 > 나의 iPhone > BulkSend' : folder.path,
   );
 }

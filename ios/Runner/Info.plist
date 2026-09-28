@@ -69,7 +69,7 @@
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>같은 네트워크의 다른 기기와 파일을 주고받기 위해 필요합니다.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>사진과 동영상을 보내기 위해 필요합니다.</string>
+	<string>사진과 동영상을 보내고, 받은 사진과 동영상을 저장하기 위해 필요합니다.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>받은 사진과 동영상을 저장하기 위해 필요합니다.</string>
 	<key>UIFileSharingEnabled</key>
